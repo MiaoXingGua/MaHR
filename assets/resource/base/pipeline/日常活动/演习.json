@@ -1,0 +1,159 @@
+/*
+演习.json
+回到主界面(ReturnToMain)→识别"演习" "roi": [1100, 550, 100, 70] 并点击（测试6秒后才回到下一个页面）分支①②
+△ ①识别 “代理完成” 点击→识别“确认”点击→然后进入②
+△ ②识别 “代理作战” 点击 → 识别“开始代理”和“MAX” 先点击“MAX” 然后是“开始代理”→等待“3：45”→识别 “代理完成” 点击→识别“确认”点击→然后回到主界面(ReturnToMain)
+每步检查网络Network_HandleError
+
+**/
+{
+  // 检查是否在主界面（OCR 识别‘作战’或‘演习’），成功跳转点击演习，失败循环返回主界面，处理网络异常
+  "StartExercise": {
+    "focus": "> 开始演习",
+    "next": ["Exercise_CheckInMain"], // 先走next 看看是不是首页
+    "on_error": ["Exercise_ClickBack"],
+    "interrupt": [
+      "Network_HandleError",
+      "ReturnToMain" // 不是首页。则回首页，然后再来StartExercise
+    ]
+  },
+  "Exercise_CheckInMain": {
+    "recognition": "OCR",
+    "expected": ["作战", "演习"],
+    "roi": [1100, 550, 100, 150], // 1080p
+    "action": "DoNothing",
+    "focus": "> 检查主界面",
+    "next": ["Exercise_ClickExercise"],
+  },
+  // 识别并点击‘演习’按钮，等待 6 秒后进入分支①（代理完成）或检查“0”，检查网络异常
+  "Exercise_ClickExercise": {
+    "recognition": "OCR",
+    "expected": "演习",
+    "roi": [1100, 550, 100, 70], // 1080p
+    "action": "Click",
+    "pre_wait_freezes": 1000,
+    "post_delay": 6000, // 等待 6 秒
+    "focus": "> 点击演习",
+    "next": ["Exercise_CheckAgentComplete", "Exercise_CheckZero"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 点击左上角返回按钮，尝试返回主界面，失败进入计数器，检查网络异常
+  "Exercise_ClickBack": {
+    "action": "Click",
+    "target": [50, 50, 50, 50], // 1080p
+    "pre_wait_freezes": 1000,
+    "post_delay": 2000,
+    "focus": "> 点击返回主界面",
+    "next": ["StartExercise"],
+    "on_error": ["Exercise_BackRetryCounter"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 计数返回主界面尝试次数，最多 5 次，失败跳转停止任务，检查网络异常
+  "Exercise_BackRetryCounter": {
+    "action": "Custom",
+    "custom_action": "count",
+    "custom_action_param": {
+      "self": "Exercise_BackRetryCounter",
+      "count": 0,
+      "target_count": 5,
+      "next_node": ["Exercise_StopTask"]
+    },
+    "next": ["Exercise_ClickBack"],
+    "focus": "> 主界面返回重试计数",
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支①：识别并点击‘代理完成’，跳转确认步骤，检查网络异常
+  "Exercise_CheckAgentComplete": {
+    "recognition": "OCR",
+    "expected": "代理完成",
+    "roi": [950, 620, 130, 65], // 1080p
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支①：检测代理完成",
+    "next": ["Exercise_ConfirmAgent"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支①：识别并点击‘确认’，跳转分支②（检查“0”），检查网络异常
+  "Exercise_ConfirmAgent": {
+    "recognition": "OCR",
+    "expected": "确认",
+    "roi": [580, 580, 100, 70], // 1080p
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支①：确认代理完成",
+    "next": ["Exercise_CheckZero"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：检查“0”，若识别到则返回主界面，未识别到则点击代理作战，检查网络异常
+  "Exercise_CheckZero": {
+    "recognition": "OCR",
+    "expected": "0",
+    "roi": [1135, 25, 15, 23], // 1080p
+    "action": "DoNothing",
+    "focus": "> 分支②：检查‘0’",
+    "next": ["ReturnToMain"],
+    "on_error": ["Exercise_CheckAgentBattle"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：识别并点击‘代理作战’，进入 MAX 和开始代理步骤，检查网络异常
+  "Exercise_CheckAgentBattle": {
+    "recognition": "OCR",
+    "expected": "代理作战",
+    "roi": [820, 620, 120, 50], // 1080p
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支②：检测代理作战",
+    "next": ["Exercise_ClickMax"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：识别并点击‘MAX’按钮，跳转开始代理，检查网络异常
+  "Exercise_ClickMax": {
+    "recognition": "OCR",
+    "expected": "MAX",
+    "roi": [750, 300, 70, 50], // 1080p，假设 MAX 按钮
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支②：点击 MAX",
+    "next": ["Exercise_ClickStartAgent"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：识别并点击‘开始代理’，等待 3 分 45 秒，跳转再次检查代理完成，检查网络异常
+  "Exercise_ClickStartAgent": {
+    "recognition": "OCR",
+    "expected": "开始代理",
+    "roi": [560, 510, 130, 60], // 1080p，假设开始代理按钮
+    "action": "Click",
+    "post_delay": 225000, // 3 分 45 秒
+    "focus": "> 分支②：点击开始代理",
+    "next": ["Exercise_CheckAgentCompleteAgain"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：再次识别并点击‘代理完成’，跳转确认步骤，检查网络异常
+  "Exercise_CheckAgentCompleteAgain": {
+    "recognition": "OCR",
+    "expected": "代理完成",
+    "roi": [950, 620, 130, 65], // 1080p
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支②：再次检测代理完成",
+    "next": ["Exercise_ConfirmAgentAgain"],
+    "interrupt": ["Network_HandleError"]
+  },
+  // 分支②：识别并点击‘确认’，跳转返回主界面，检查网络异常
+  "Exercise_ConfirmAgentAgain": {
+    "recognition": "OCR",
+    "expected": "确认",
+    "roi": [580, 580, 100, 70], // 1080p
+    "action": "Click",
+    "post_delay": 1000,
+    "focus": "> 分支②：再次确认代理完成",
+    "next": ["ReturnToMain"], // 结束时 ReturnToMain 在 next 里
+    "interrupt": ["Network_HandleError"]
+  },
+  // 停止任务，结束流程
+  "Exercise_StopTask": {
+    "focus": "> 任务停止",
+    "action": "StopTask",
+    "next": []
+  }
+}
