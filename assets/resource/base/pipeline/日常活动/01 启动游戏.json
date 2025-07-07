@@ -1,0 +1,136 @@
+
+/*
+    我写伪代码 你来帮我用代码实现 这是一个名叫《苍雾残响/苍雾世界 Haze Reverb》游戏需要用的pipeline 首先是自动登录功能 ：
+    启动游戏.json
+    启动APP（要用doc字段提示用户） 启动中（这段时间每个3秒检查并输出一次"加载中.."）
+        △ 这里出现【分支】如果识别到“确认”则点击 之后识别到【正在下载资源】提示用户（时间可能比较久）识别【更新完成】提示用户
+        △ 识别到【活动公告】点击一下指定位置（屏幕左边的一个位置：这样来关掉公告）
+    识别到【TOUCH TO START】点击进入游戏
+    （此时已进入游戏了，会跳出签到页）识别到【点击签到】点击
+    识别【TOUCH TO EXIT】点击
+    点击左上角 （来到游戏主界面 启动完成）
+**/
+
+
+{
+  // 任务入口：启动《苍雾残响》游戏应用
+  "StartApp": {
+    "action": "StartApp", // 动作：启动指定的 Android 应用
+    "package": "com.feimo.hazeworld.mumu", // 游戏包名（国际服hazereverb）
+    "post_delay": 10000, // 启动后等待 5 秒，确保应用加载
+    "next": ["CheckLoading"] // 下一步：检查加载状态
+  },
+  // 检查游戏加载状态，循环检测分支情况
+  "CheckLoading": {
+    // "recognition": "DirectHit", // 不进行识别，仅作为控制节点
+    // "action": "DoNothing", // 无动作，模拟加载等待
+    "rate_limit": 5000, // 每 3 秒检测一次分支
+    "timeout": 600000, // 超时时间：10 分钟（600000 毫秒），避免加载过久卡死
+    "focus": "> 加载中..", // 提示：每 3 秒显示“加载中..”（依赖 MaaPiCli 或日志系统）
+    "next": ["CheckConfirm", "CheckAnnouncement"], // 分支：检查“确认”按钮或“活动公告”
+    "interrupt": ["StartApp"] // 中断：如果加载失败，尝试重新启动应用
+  },
+  // 分支 1：处理“确认”按钮（例如：更新提示）
+  "CheckConfirm": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "确认", // 目标文字：识别“确认”按钮
+    "roi": [1000, 550, 400, 150], // 识别区域：屏幕中间（基于 1080p）
+    "action": "Click", // 动作：点击“确认”按钮
+    "post_delay": 1000, // 点击后等待 1 秒
+    "next": ["DownloadingResources"] // 下一步：进入资源下载
+  },
+  // 提示用户正在下载资源
+  "DownloadingResources": {
+    // "recognition": "DirectHit", // 不进行识别，仅提示
+    // "action": "DoNothing", // 无动作，仅显示提示
+    "focus": "> 正在下载资源，时间可能较长，请耐心等待", // 提示：显示下载提示（依赖 MaaPiCli 或日志）
+    "post_delay": 5000, // 每 5 秒检查一次更新完成
+    "next": ["CheckUpdateComplete"] // 下一步：检查“更新完成”
+  },
+  // 检查更新完成状态
+  "CheckUpdateComplete": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "更新完成", // 目标文字：识别“更新完成”
+    "roi": [500, 400, 500, 100], // 识别区域：屏幕中间（基于 1080p）
+    "action": "DoNothing", // 无动作，仅提示
+    "focus": "> 更新完成", // 提示：显示更新完成
+    "post_delay": 1000, // 等待 1 秒
+    "next": ["TouchToStart"] // 下一步：进入“TOUCH TO START”
+  },
+  // 分支 2：处理“活动公告”弹窗
+  "CheckAnnouncement": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "活动公告", // 目标文字：识别“活动公告”
+    "roi": [430, 60, 150, 60], // 识别区域：屏幕上部（基于 1080p）
+    "action": "Click", // 动作：点击关闭公告
+    "target": [40, 40, 50, 50], // 点击屏幕左边区域（基于 1080p）
+    "post_delay": 1000, // 点击后等待 1 秒
+    "next": ["TouchToStart"] // 下一步：进入“TOUCH TO START”
+  },
+  // 进入游戏主界面
+  "TouchToStart": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "TOUCH TO START", // 目标文字：识别“TOUCH TO START”
+    "roi": [500, 550, 280, 80], // 识别区域：基于 1080p
+    "action": "Click", // 动作：点击进入游戏
+    "post_delay": 5000, // 点击后等待 5 秒，确保加载
+    "pre_wait_freezes": 1000, // 等待画面稳定 1 秒
+    "next": ["CheckMainMenu", "InitSignInCounter"], // 下一步：优先检查主界面，未识别则初始化签到计数
+    "interrupt": ["CheckAnnouncement"] // 没检测到TOUCH TO START，可能是公告没关掉，尝试再次关闭
+  },
+  // 检查主界面，识别“作战”或“演习”后结束
+  "CheckMainMenu": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": ["作战", "演习"], // 目标文字：主界面标志
+    "roi": [1100, 550, 100, 150], // 识别区域：屏幕中间（基于 1080p）
+    "focus": "> 已进入主界面", // 提示：确认到达主界面
+    "post_delay": 1000, // 等待 1 秒
+    "next": ["EndTask"] // 任务结束
+  },
+  // 初始化签到尝试计数器
+  "InitSignInCounter": {
+    "action": "Custom", // 使用自定义动作初始化计数器
+    "custom_action": "init_counter", // 初始化计数器
+    "custom_action_param": "max=3&exceed=false", // 最大尝试 3 次，exceed=false 表示未超出
+    "next": ["CheckSignIn"] // 下一步：检查签到
+  },
+  // 【循环】处理签到页面，尝试三次后结束
+  "CheckSignIn": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "点击签到", // 目标文字：识别“点击签到”按钮
+    // "roi": [500, 400, 280, 160], // 识别区域：屏幕中间（基于 720p，需确认）
+    "action": "Click", // 动作：点击签到按钮
+    "pre_wait_freezes": 1000, // 点击前等待画面稳定 1 秒
+    "post_delay": 1000, // 点击后等待 1 秒
+    "next": ["TouchToExit"], // 成功：退出签到页面
+    "on_error": ["SignInCounter"] // 失败：增加计数并检查
+  },
+  // 【循环】签到尝试计数并判断是否继续
+  "SignInCounter": {
+    "action": "Custom", // 使用自定义动作计数
+    "custom_action": "count", // 增加计数器
+    "custom_action_param": {
+      "self": "SignInCounter", // 当前节点
+      "count": 0, // 初始计数
+      "target_count": 3, // 目标计数：3 次
+      "next_node": [] // 达到 3 次直接结束（假设非首次登录或异常）
+    },
+    "next": ["CheckSignIn"] // 未达到 3 次，继续尝试签到
+  },
+  // 退出签到页面
+  "TouchToExit": {
+    "recognition": "OCR", // 使用 OCR 识别文字
+    "expected": "TOUCH TO EXIT", // 目标文字：识别“TOUCH TO EXIT”
+    // "roi": [500, 400, 280, 160], // 识别区域：屏幕中间（基于 720p，需确认）
+    "action": "Click", // 动作：点击退出签到页面
+    "pre_wait_freezes": 1000, // 点击前等待画面稳定 1 秒
+    "post_delay": 1000, // 点击后等待 1 秒
+    "next": ["EndTask"] // 任务结束
+  },
+  // 明确结束任务
+  "EndTask": {
+    "focus": "> 启动游戏 结束", // 提示：任务完成
+    "action": "StopTask" // 明确停止任务
+  }
+
+}
