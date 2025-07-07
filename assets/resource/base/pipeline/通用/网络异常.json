@@ -1,0 +1,36 @@
+{
+  "Network_HandleError": {
+    "recognition": "OCR",
+    "expected": ["网络连接异常"],
+    "roi": [500, 400, 400, 200], // 1080p，网络异常弹窗
+    "action": "DoNothing",
+    "focus": "> 识别网络连接异常",
+    "next": ["Network_ClickConfirm"],
+    "on_error": [] // 不处理错误，交由调用者
+  },
+  "Network_ClickConfirm": {
+    "recognition": "OCR",
+    "expected": "确认",
+    "roi": [1000, 600, 100, 50], // 1080p，确认按钮
+    "action": "Click",
+    "pre_wait_freezes": 1000,
+    "post_delay": 5000, // 等待 5 秒，进入登录界面
+    "focus": "> 点击确认",
+    "next": ["Network_ClickLogin"]
+  },
+  "Network_ClickLogin": {
+    "recognition": "OCR",
+    "expected": "登录",
+    "roi": [1000, 550, 400, 150], // 1080p，登录按钮
+    "action": "Click",
+    "pre_wait_freezes": 1000,
+    "post_delay": 3000, // 等待 3 秒，进入加载
+    "focus": "> 点击登录",
+    "next": ["CheckLoading"] // 跳转到启动游戏.json 的 CheckLoading
+  },
+  "Network_StopTask": {
+    "focus": "> 任务停止",
+    "action": "StopTask",
+    "next": []
+  }
+}

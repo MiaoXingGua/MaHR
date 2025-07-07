@@ -1,0 +1,46 @@
+{
+  "ReturnToMain": {
+    "focus": "> 开始返回主界面",
+    "on_error": ["Main_BackRetryCounter"],
+    "next": ["Main_Already"], // 先走next 看看是不是首页
+    "interrupt": [
+      "Network_HandleError",
+      "Main_ClickBack" // 不是首页。则回首页
+    ]
+  },
+  "Main_Already": {
+    "recognition": "OCR",
+    "expected": ["作战", "演习"],
+    "roi": [1100, 550, 100, 150], // 1080p
+    // "action": "DoNothing",
+    "focus": "> 已经是主界面了",
+    "next": [], // 由 interrupt 控制，返回原节点
+    "interrupt": ["Main_ClickBack"] // 还不是主界面，则按返回按钮
+  },
+  "Main_ClickBack": {
+    "action": "Click",
+    "target": [50, 25, 50, 50], // 左上角返回，1080p
+    "pre_wait_freezes": 1000,
+    "post_delay": 3000,
+    "focus": "> 点击返回主界面",
+    "next": ["ReturnToMain"],
+    "on_error": ["Main_BackRetryCounter"]
+  },
+  "Main_BackRetryCounter": {
+    "action": "Custom",
+    "custom_action": "count",
+    "custom_action_param": {
+      "self": "Main_BackRetryCounter",
+      "count": 0,
+      "target_count": 5,
+      "next_node": ["Main_StopTask"]
+    },
+    "next": ["Main_ClickBack"],
+    "focus": "> 主界面返回重试计数"
+  },
+  "Main_StopTask": {
+    "focus": "> 任务停止",
+    "action": "StopTask", // StopTask 会停止整个任务链
+    "next": []
+  }
+}
