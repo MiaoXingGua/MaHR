@@ -1,163 +1,229 @@
+# 工作流名称，会显示在 GitHub Actions 界面中
 name: install
 
+# 触发条件：定义什么情况下触发工作流
 on:
+  # 推送时，满足以下条件之一会触发工作流
   push:
+    # 当推送标签以 "v" 开头时触发（如 v1.0.0）
     tags:
       - "v*"
+    # 当推送任意分支时触发
     branches:
       - "**"
+    # 仅当修改以下路径时触发
     paths:
-      - ".github/workflows/install.yml"
-      - "assets/**"
-      - "**.py"
+      - ".github/workflows/install.yml"  # 工作流文件本身
+      - "assets/**"                      # assets 目录变更（代码路径）
+      - "**.py"                          # 所有 Python 文件
   pull_request:
+    # 当所有分支有拉取请求时触发
     branches:
       - "**"
+    # 仅当修改以下路径时触发
     paths:
       - ".github/workflows/install.yml"
       - "assets/**"
       - "**.py"
+  # 允许手动触发工作流
   workflow_dispatch:
 
+# 定义工作流任务
 jobs:
+  # 元数据处理：获得 标签（tag）和发布状态（is_release）
   meta:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code  # 拉取代码仓库
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - id: set_tag
+          fetch-depth: 0  # 获取完整历史记录（用于标签查询）
+
+      - id: set_tag  # 步骤 ID，用于输出结果
         run: |
+          # 判断当前是否为发布标签（以 refs/tags/v 开头）
           is_release=${{ startsWith(github.ref, 'refs/tags/v') }}
+          # 获取当前引用的标签（若不是标签则可能为空）
           tag=$(git describe --tags --match "v*" ${{ github.ref }} || true)
+
+          # 若标签格式不正确（不以 v 开头）
           if [[ $tag != v* ]]; then
+            # 尝试从最新发布中获取标签
             tag=$(curl -sX GET "https://api.github.com/repos/${{ github.repository }}/releases/latest" --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' | awk '/tag_name/{print $4}' FS='["]')
+            # 若仍获取失败，使用默认标签 v0.0.0
             if [[ $tag != v* ]]; then
               tag="v0.0.0"
             fi
+            # 生成带日期和 commit 的标签（如 v0.0.0-231001-abc123）
             tag=$(date "+$tag-%y%m%d-$(git rev-parse --short HEAD)")
           fi
+
+          # 若非发布标签，添加 ci 前缀（如 v0.0.0-ci.231001-abc123）
           if ! $($is_release) ; then
             prefix=${tag%-*-*}
             suffix=${tag#$prefix-}
             tag="$prefix-ci.$suffix"
           fi
 
+          # 输出标签和发布状态到工作流变量
           echo tag=$tag | tee -a $GITHUB_OUTPUT
           echo is_release=$is_release | tee -a $GITHUB_OUTPUT
+    # 输出结果供其他任务使用
     outputs:
       tag: ${{ steps.set_tag.outputs.tag }}
       is_release: ${{ steps.set_tag.outputs.is_release }}
 
-  install:
-    needs: meta
-    runs-on: macos-latest
+   # 安装 MaaFramework 任务（下载 + 安装）
+  install-MaaFramework:
+    needs: meta # 依赖 meta 任务的输出：标签（tag）和 发布状态（is_release）
+    # 设置运行环境
+    runs-on: ${{ matrix.os == 'win' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
     strategy:
       matrix:
-        os: [win, macos, linux, android]
-        arch: [aarch64, x86_64]
+        os: [win, linux, macos]
+        arch: [x86_64, aarch64]
       fail-fast: false
-
     steps:
-      - uses: actions/checkout@v4
+      # 检出代码
+      - name: Checkout Code
+        uses: actions/checkout@v4 # 检出当前仓库代码
         with:
-          submodules: true
+          submodules: true # 同时检出仓库的子模块（若有依赖子模块）
+      # 设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Download MaaFramework
+      # 清理安装目录
+      # - name: Clean Install Directory
+      #   run: rm -rf install && mkdir -p install/MaaFramework/${{ matrix.os }}-${{ matrix.arch }}
+      #   shell: bash
+
+      # 下载 MFAAvalonia 最新发布包（排除 android 平台，因矩阵中无 android）
+      - name: Download MAA
         uses: robinraju/release-downloader@v1
         with:
           repository: MaaXYZ/MaaFramework
           fileName: "MAA-${{ matrix.os }}-${{ matrix.arch }}*"
           latest: true
-          out-file-path: "deps"
-          extract: true
+          out-file-path: 'deps' # 下载文件的输出目录
+          extract: true # 自动解压下载的压缩包
 
-      - name: Download MFAAvalonia
-        if: matrix.os != 'android'
-        id: download_mfa
-        uses: robinraju/release-downloader@v1
-        with:
-          repository: SweetSmellFox/MFAAvalonia
-          fileName: "MFAAvalonia-*-${{ (matrix.os == 'win' && 'win') || (matrix.os == 'macos' && 'osx') || (matrix.os == 'linux' && 'linux') }}-${{ (matrix.arch == 'x86_64' && 'x64') || (matrix.arch == 'aarch64' && 'arm64') }}*"
-          latest: true
-          out-file-path: "MFA"
-          extract: true
-
-      - name: Clean up MFAAvalonia archive
-        if: matrix.os != 'android'
-        shell: bash
-        run: |
-          ARCHIVE_FILE_PATH="${{ fromJson(steps.download_mfa.outputs.downloaded_files)[0] }}"
-          rm -f "${ARCHIVE_FILE_PATH}"
-          echo "Archive cleanup command executed for MFAAvalonia."
-
-      - name: Install
+      # 安装 MaaFramework
+      # 安装路径 install/MaaFramework/${os}-${arch}
+      - name: Install MaaFramework
         shell: bash
         run: |
           python ./install.py ${{ needs.meta.outputs.tag }}
 
-          if [[ "${{ matrix.os }}" != "android" ]]; then
-            if [ -d "MFA" ]; then
-              echo "Copying MFA files to install directory..."
-              mkdir -p install
-              rsync -av --ignore-existing MFA/ install/
-            else
-              echo "MFA directory not found, skipping copy."
-            fi
-          else
-            echo "Skipping copy MFA for Android."
-          fi
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MaaXXX-${{ matrix.os }}-${{ matrix.arch }}
-          path: "install"
 
-  changelog:
-    name: Generate changelog
-    runs-on: ubuntu-latest
-    outputs:
-      release_body: ${{ steps.git-cliff.outputs.content }}
+      # - name: Upload Artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: MaHR-${{ matrix.os }}-${{ matrix.arch }}
+      #     path: 'install'
+
+
+  # 安装 MFAAvalonia 任务（下载 + 安装）
+  install-MFAAvalonia:
+    needs: meta
+    runs-on: ${{ matrix.os == 'win' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    strategy:
+      matrix:
+        os: [win, linux, osx]
+        arch: [x64, arm64]
+      fail-fast: false
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          submodules: true
 
-      - name: Generate a changelog
-        uses: orhun/git-cliff-action@v4
-        id: git-cliff
+      - name: Clean Install Directory
+        run: rm -rf install && mkdir -p install/MFAAvalonia/${{ matrix.os }}-${{ matrix.arch }}
+        shell: bash
+
+      - name: Download MFA
+        # 矩阵中 os 为 win/linux/osx，此条件始终成立，可保留作为兼容扩展
+        if: ${{ matrix.os != 'android' }}
+        uses: robinraju/release-downloader@v1
         with:
-          config: .github/cliff.toml
-          args: -vv --latest --strip header
-        env:
-          OUTPUT: CHANGES.md
-          GITHUB_REPO: ${{ github.repository }}
+          repository: SweetSmellFox/MFAAvalonia
+          fileName: "MFAAvalonia-*-${{ matrix.os }}-${{ matrix.arch }}*"
+          latest: true
+          out-file-path: 'MFAAvalonia'
+          extract: true
 
-  release:
-    if: ${{ needs.meta.outputs.is_release == 'true' }}
-    needs: [install, changelog]
+      - name: Install MFAAvalonia
+        if: ${{ matrix.os != 'android' }}
+        shell: bash
+        run: |
+          if [ -d "MFAAvalonia/resource/base/model" ]; then
+            rm -rf MFAAvalonia/resource/base/model
+          else
+            echo "WARNING: MFAAvalonia/resource/base/model does not exist, skipping removal"
+          fi
+          if ls MFAAvalonia/* >/dev/null 2>&1; then
+            cp -r MFAAvalonia/* install/MFAAvalonia/${{ matrix.os }}-${{ matrix.arch }}/
+          else
+            echo "ERROR: No files found in MFAAvalonia directory"
+            exit 1
+          fi
+
+      # 上传安装后的文件作为制品，供后续步骤（如发布）使用
+      # - name: Upload Artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: MaHR-${{ matrix.os }}-${{ matrix.arch }}
+      #     path: 'install' # 上传 install 目录下的所有内容（即安装好的 MFAAvalonia 文件）
+
+  # 统一上传构建产物
+  upload-artifacts:
+    needs: [install-MaaFramework, install-MFAAvalonia]
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [win, linux, osx]
+        arch: [x64, arm64]
+      fail-fast: false
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: assets
+          path: install
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # name: MaHR-Artifacts
+          name: MaHR-${{ matrix.os }}-${{ matrix.arch }}  # 使用项目名称 MaHR
+          path: install/
 
-      - run: |
+  # 发布任务：仅在正式发布时执行
+  release:
+    # 仅当 is_release 为 true 时执行
+    if: ${{ needs.meta.outputs.is_release == 'true' }}
+    needs: [meta, upload-artifacts] # 依赖任务完成
+    runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
+    steps:
+      - name: Download Artifacts  # 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: assets  # 下载到 assets 目录
+
+      - name: Package Artifacts  # 压缩产物为 ZIP
+        run: |
           cd assets
           for f in *; do
             (cd $f && zip -r ../$f-${{ needs.meta.outputs.tag }}.zip .)
           done
-          
-      - uses: softprops/action-gh-release@v2
+
+      - name: Create Release  # 创建 GitHub Release 并上传产物
+        uses: softprops/action-gh-release@v2
         with:
-          files: assets/*
-          tag_name: ${{ needs.meta.outputs.tag }}
-          body: ${{ needs.changelog.outputs.release_body }}
-          draft: false
-          
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: assets/*
-          tag_name: ${{ needs.meta.outputs.tag }}
-          generate_release_notes: true
+          files: assets/*  # 上传 assets 目录下所有文件
+          tag_name: ${{ needs.meta.outputs.tag }}  # 发布标签
+          generate_release_notes: true  # 自动生成发布说明
