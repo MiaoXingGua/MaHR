@@ -90,7 +90,16 @@ jobs:
         with:
           submodules: true
 
-      - name: Install  # 执行安装脚本（使用 Python）
+      - name: Download MaaFramework
+        uses: robinraju/release-downloader@v1
+        with:
+            repository: MaaXYZ/MaaFramework
+            fileName: 'MAA-${{ matrix.os }}-${{ matrix.arch }}*'
+            latest: true
+            out-file-path: 'deps'
+            extract: true
+
+      - name: Install  # 执行安装脚本（）
         shell: bash
         run: |
           python ./install.py ${{ needs.meta.outputs.tag }}  # 传入标签参数
