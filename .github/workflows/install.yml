@@ -1,24 +1,29 @@
-# 工作流名称：安装 MFAAvalonia 项目
+# 工作流名称，会显示在 GitHub Actions 界面中
 name: install
 
-# 触发条件：当推送 tag（v*）、任意分支、指定路径（workflows, assets, *.py）或 PR 时运行
+# 触发条件：定义什么情况下触发工作流
+# 当推送 tag（v*）、任意分支、指定路径（workflows, assets, *.py）或 PR 时运行
 on:
+  # 推送时，满足以下条件之一会触发工作流
   push:
     tags:
       - "v*"  # 匹配 v 开头的 tag（如 v1.0.0）
     branches:
       - "**"  # 任意分支
+    # 仅当推送的文件满足以下路径条件时才触发（限制触发范围，避免不必要的运行
     paths:
       - ".github/workflows/install.yml"  # 工作流文件变更
-      - "assets/**"  # assets 目录变更
+      - "assets/**"  # assets 目录变更（代码路径）
       - "**.py"  # 任意 Python 文件变更
+  # 创建或更新拉取请求时
   pull_request:
     branches:
       - "**"  # 任意分支的 PR
     paths:
       - ".github/workflows/install.yml"  # 工作流文件变更
-      - "assets/**"  # assets 目录变更
+      - "assets/**"  # assets 目录变更（代码路径）
       - "**.py"  # 任意 Python 文件变更
+  # 手动触发
   workflow_dispatch:  # 支持手动触发
 
 # 作业 1：元数据处理，生成 tag 和 release 状态

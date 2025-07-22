@@ -7,7 +7,6 @@ on:
     paths:
       - ".github/workflows/check.yml"
       - "assets/**"
-      - "**.json"
       - "**.py"
   pull_request:
     branches:
@@ -20,7 +19,7 @@ on:
 
 jobs:
   resource:
-    runs-on: windows-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +31,6 @@ jobs:
             python -m pip install --upgrade pip
             python -m pip install --upgrade maafw --pre
 
-      # - name: Check Resource
-      #   run: |
-      #       python ./ci/check_resource.py ./assets/resource/
+      - name: Check Resource
+        run: |
+            python ./check_resource.py ./assets/resource/
