@@ -1,5 +1,11 @@
 from pathlib import Path
 import shutil
+import sys
+import os
+
+# 设置 UTF-8 编码，确保 Windows 环境正确处理中文输出
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # 获取项目根目录下的 assets 文件夹路径
 assets_dir = Path(__file__).parent.resolve() / "assets"
@@ -13,7 +19,7 @@ def configure_ocr_model():
     # 检查源OCR模型文件是否存在
     if not assets_ocr_dir.exists():
         print(f"文件未找到: {assets_ocr_dir}")
-        exit(1)
+        sys.exit(1)
 
     # 目标OCR模型存放路径（项目资源目录）
     ocr_dir = assets_dir / "resource" / "base" / "model" / "ocr"
@@ -23,7 +29,7 @@ def configure_ocr_model():
     if not ocr_dir.exists():
         shutil.copytree(
             # 源路径：使用MaaCommonAssets提供的PPOCR v5中文模型
-            assets_dir / "MaaCommonAssets" / "OCR" / "ppocr_v5" / "zh_cn",
+            assets_ocr_dir / "ppocr_v5" / "zh_cn",
             ocr_dir,  # 目标路径
             dirs_exist_ok=True,  # 允许目录已存在（处理并行执行情况）
         )
@@ -35,5 +41,5 @@ def configure_ocr_model():
 if __name__ == "__main__":
     # 执行OCR模型配置
     configure_ocr_model()
-    # 提示配置完成
+    # 提示配置完成（移除重复的 print 语句）
     print("OCR模型配置完成。")
