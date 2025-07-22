@@ -80,8 +80,11 @@ jobs:
     strategy:
       # 多平台多架构矩阵
       matrix:
-        os: [win, osx, linux]  # 目标操作系统
-        arch: [arm64, x64]     # 目标架构
+        # 修正系统和架构的映射关系，匹配实际文件名格式
+        # os: [win, osx, linux]  # 目标操作系统
+        # arch: [arm64, x64]     # 目标架构
+        os: [win, macos, linux]
+        arch: [x86_64, aarch64]  # 直接使用 x86_64 而非 x64
       fail-fast: false  # 一个矩阵失败不影响其他矩阵执行
 
     steps:
@@ -95,6 +98,8 @@ jobs:
         with:
             repository: MaaXYZ/MaaFramework
             fileName: 'MAA-${{ matrix.os }}-${{ matrix.arch }}*'
+            # MAA-osx-arm64* #  MAA-macos-aarch64
+            # MAA-win-x64* #  MAA-win-x86_64-v4.4.0.zip
             latest: true
             out-file-path: 'deps'
             extract: true
