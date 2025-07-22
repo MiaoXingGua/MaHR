@@ -2,128 +2,143 @@
 name: install
 
 # 触发条件：定义什么情况下触发工作流
-# 当推送 tag（v*）、任意分支、指定路径（workflows, assets, *.py）或 PR 时运行
 on:
   # 推送时，满足以下条件之一会触发工作流
   push:
+    # 当推送标签以 "v" 开头时触发（如 v1.0.0）
     tags:
-      - "v*"  # 匹配 v 开头的 tag（如 v1.0.0）
+      - "v*"
+    # 当推送任意分支时触发
     branches:
-      - "**"  # 任意分支
-    # 仅当推送的文件满足以下路径条件时才触发（限制触发范围，避免不必要的运行
+      - "**"
+    # 仅当修改以下路径时触发
     paths:
-      - ".github/workflows/install.yml"  # 工作流文件变更
-      - "assets/**"  # assets 目录变更（代码路径）
-      - "**.py"  # 任意 Python 文件变更
-  # 创建或更新拉取请求时
+      - ".github/workflows/install.yml"  # 工作流文件本身
+      - "assets/**"                      # assets 目录变更（代码路径）
+      - "**.py"                          # 所有 Python 文件
   pull_request:
+    # 当所有分支有拉取请求时触发
     branches:
-      - "**"  # 任意分支的 PR
+      - "**"
+    # 仅当修改以下路径时触发
     paths:
-      - ".github/workflows/install.yml"  # 工作流文件变更
-      - "assets/**"  # assets 目录变更（代码路径）
-      - "**.py"  # 任意 Python 文件变更
-  # 手动触发
-  workflow_dispatch:  # 支持手动触发
+      - ".github/workflows/install.yml"
+      - "assets/**"
+      - "**.py"
+  # 允许手动触发工作流
+  workflow_dispatch:
 
-# 作业 1：元数据处理，生成 tag 和 release 状态
+# 定义工作流任务
 jobs:
+  # 元数据处理任务：确定版本标签和发布状态
   meta:
-    runs-on: ubuntu-latest  # 运行在 Ubuntu 最新版本
+    runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
     steps:
-      - uses: actions/checkout@v4  # 检出代码
+      - name: Checkout Code  # 拉取代码仓库
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整 Git 历史，便于 tag 处理
-      - id: set_tag  # 设置 tag 和 release 状态
+          fetch-depth: 0  # 获取完整历史记录（用于标签查询）
+
+      - id: set_tag  # 步骤 ID，用于输出结果
         run: |
-          # 检查是否为 release（tag 以 v 开头）
+          # 判断当前是否为发布标签（以 refs/tags/v 开头）
           is_release=${{ startsWith(github.ref, 'refs/tags/v') }}
-          # 获取当前 tag（如果存在）
+          # 获取当前引用的标签（若不是标签则可能为空）
           tag=$(git describe --tags --match "v*" ${{ github.ref }} || true)
-          # 如果没有 tag，尝试获取最新 release 的 tag
+
+          # 若标签格式不正确（不以 v 开头）
           if [[ $tag != v* ]]; then
+            # 尝试从最新发布中获取标签
             tag=$(curl -sX GET "https://api.github.com/repos/${{ github.repository }}/releases/latest" --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' | awk '/tag_name/{print $4}' FS='["]')
-            # 如果没有 release tag，设置为默认 v0.0.0
+            # 若仍获取失败，使用默认标签 v0.0.0
             if [[ $tag != v* ]]; then
               tag="v0.0.0"
             fi
-            # 添加日期和短 commit ID（如 v0.0.0-250721-abc123）
+            # 生成带日期和 commit 的标签（如 v0.0.0-231001-abc123）
             tag=$(date "+$tag-%y%m%d-$(git rev-parse --short HEAD)")
           fi
-          # 如果不是 release，添加 -ci 后缀（如 v0.0.0-ci.250721-abc123）
+
+          # 若非发布标签，添加 ci 前缀（如 v0.0.0-ci.231001-abc123）
           if ! $($is_release) ; then
             prefix=${tag%-*-*}
             suffix=${tag#$prefix-}
             tag="$prefix-ci.$suffix"
           fi
-          # 输出 tag 和 is_release 到 GITHUB_OUTPUT
+
+          # 输出标签和发布状态到工作流变量
           echo tag=$tag | tee -a $GITHUB_OUTPUT
           echo is_release=$is_release | tee -a $GITHUB_OUTPUT
+    # 输出结果供其他任务使用
     outputs:
-      tag: ${{ steps.set_tag.outputs.tag }}  # 输出生成的 tag
-      is_release: ${{ steps.set_tag.outputs.is_release }}  # 输出是否为 release
+      tag: ${{ steps.set_tag.outputs.tag }}
+      is_release: ${{ steps.set_tag.outputs.is_release }}
 
-# 作业 2：安装和构建
-jobs:
+  # 安装任务：构建并打包安装文件
   install:
-    needs: meta  # 依赖 meta 作业获取 tag
-    runs-on: macos-latest  # 运行在 macOS 最新版本
+    needs: meta  # 依赖 meta 任务的输出
+    runs-on: macos-latest  # 使用 macOS 系统运行
     strategy:
+      # 多平台多架构矩阵
       matrix:
-        os: [win, osx, linux]  # 支持 Windows, macOS, Linux
-        arch: [arm64, x64]  # 支持 ARM64 和 x64 架构
-      fail-fast: false  # 单一平台失败不中断工作流
+        os: [win, osx, linux]  # 目标操作系统
+        arch: [arm64, x64]     # 目标架构
+      fail-fast: false  # 一个矩阵失败不影响其他矩阵执行
 
     steps:
-      - uses: actions/checkout@v4  # 检出代码
+      - name: Checkout Code  # 拉取代码（包括子模块）
+        uses: actions/checkout@v4
         with:
-          submodules: true  # 递归检出子模块（如 MaaFramework）
+          submodules: true
 
-      - name: Install  # 运行安装脚本
+      - name: Install  # 执行安装脚本（使用 Python）
         shell: bash
         run: |
-          python ./install.py ${{ needs.meta.outputs.tag }}  # 执行 install.py，传入 tag（如 v1.6.0）
+          python ./install.py ${{ needs.meta.outputs.tag }}  # 传入标签参数
 
-      - name: Download MFA  # 下载 MFAAvalonia 构建产物
-        if: ${{ matrix.os != 'android' }}  # 跳过 Android 平台
+      - name: Download MFA  # 下载 MFAAvalonia 最新发布（排除 Android 平台）
+        if: ${{ matrix.os != 'android' }}
         uses: robinraju/release-downloader@v1
         with:
-          repository: SweetSmellFox/MFAAvalonia  # 从 MFAAvalonia 仓库下载
-          fileName: "MFAAvalonia-*-${{ matrix.os }}-${{ matrix.arch }}*"  # 匹配文件名（如 MFAAvalonia-v1.6.0-win-x64.zip）
-          latest: true  # 下载最新版本
-          out-file-path: "MFAAvalonia"  # 解压到 MFAAvalonia 目录
-          extract: true  # 解压下载的 zip 文件
+          repository: SweetSmellFox/MFAAvalonia  # 仓库地址
+          fileName: "MFAAvalonia-*-${{ matrix.os }}-${{ matrix.arch }}*"  # 匹配文件名
+          latest: true  # 下载最新发布
+          out-file-path: "MFAAvalonia"  # 输出目录
+          extract: true  # 解压文件
 
-      - name: Install MFAAvalonia  # 安装 MFAAvalonia 产物
-        if: ${{ matrix.os != 'android' }}  # 跳过 Android 平台
+      - name: Install MFAAvalonia  # 安装 MFAAvalonia 到目标目录
+        if: ${{ matrix.os != 'android' }}
         shell: bash
         run: |
-          rm -rf MFAAvalonia/resource/base/model  # 删除默认模型文件
-          cp -r MFAAvalonia/* install  # 复制 MFAAvalonia 内容到 install 目录
+          rm -rf MFAAvalonia/resource/base/model  # 删除原有模型目录
+          cp -r MFAAvalonia/* install  # 复制文件到 install 目录
 
-      - uses: actions/upload-artifact@v4  # 上传构建产物
+      - name: Upload Artifacts  # 上传构建产物
+        uses: actions/upload-artifact@v4
         with:
-          name: MaHR-${{ matrix.os }}-${{ matrix.arch }}  # 命名（如 MaHR-win-x64）
+          name: MaaXXX-${{ matrix.os }}-${{ matrix.arch }}  # 产物名称（含平台和架构）
           path: "install"  # 上传 install 目录
 
-# 作业 3：发布 Release
+  # 发布任务：仅在正式发布时执行
   release:
-    if: ${{ needs.meta.outputs.is_release == 'true' }}  # 仅在 tag 为 v* 时运行
-    needs: install  # 依赖 install 作业
-    runs-on: ubuntu-latest  # 运行在 Ubuntu 最新版本
+    if: ${{ needs.meta.outputs.is_release == 'true' }}  # 仅当 is_release 为 true 时执行
+    needs: install  # 依赖 install 任务完成
+    runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
     steps:
-      - uses: actions/download-artifact@v4  # 下载所有构建产物
+      - name: Download Artifacts  # 下载所有构建产物
+        uses: actions/download-artifact@v4
         with:
-          path: assets  # 保存到 assets 目录
+          path: assets  # 下载到 assets 目录
 
-      - run: |  # 打包产物为 zip 文件
+      - name: Package Artifacts  # 压缩产物为 ZIP
+        run: |
           cd assets
           for f in *; do
-            (cd $f && zip -r ../$f-${{ needs.meta.outputs.tag }}.zip .)  # 每个平台产物打包为 zip（如 MaaXXX-win-x64-v1.6.0.zip）
+            (cd $f && zip -r ../$f-${{ needs.meta.outputs.tag }}.zip .)  # 按平台架构压缩
           done
 
-      - uses: softprops/action-gh-release@v2  # 创建 GitHub Release
+      - name: Create Release  # 创建 GitHub Release 并上传产物
+        uses: softprops/action-gh-release@v2
         with:
-          files: assets/*  # 上传所有 zip 文件
-          tag_name: ${{ needs.meta.outputs.tag }}  # 使用 meta 作业生成的 tag
-          generate_release_notes: true  # 自动生成 release 说明
+          files: assets/*  # 上传 assets 目录下所有文件
+          tag_name: ${{ needs.meta.outputs.tag }}  # 发布标签
+          generate_release_notes: true  # 自动生成发布说明
