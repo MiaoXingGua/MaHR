@@ -34,7 +34,11 @@
     "task": [
         {
             "name": "进入游戏",
-            "entry": "启动游戏"
+            "entry": "StartApp"
+        },
+        {
+            "name": "演习",
+            "entry": "StartExercise"
         }
     ],
     "option": {
