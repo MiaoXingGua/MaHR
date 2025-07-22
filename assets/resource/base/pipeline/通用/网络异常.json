@@ -29,7 +29,7 @@
     "next": ["CheckLoading"] // 跳转到启动游戏.json 的 CheckLoading
   },
   "Network_StopTask": {
-    "focus": "> 任务停止",
+    "focus": {"failed": "> 任务停止"},
     "action": "StopTask",
     "next": []
   }
