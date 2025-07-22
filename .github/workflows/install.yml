@@ -153,8 +153,17 @@ jobs:
         if: ${{ matrix.os != 'android' }}
         shell: bash
         run: |
-          rm -rf MFAAvalonia/resource/base/model
-          cp -r MFAAvalonia/* install
+          if [ -d "MFAAvalonia/resource/base/model" ]; then
+            rm -rf MFAAvalonia/resource/base/model
+          else
+            echo "WARNING: MFAAvalonia/resource/base/model does not exist, skipping removal"
+          fi
+          if ls MFAAvalonia/* >/dev/null 2>&1; then
+            cp -r MFAAvalonia/* install/MFAAvalonia/${{ matrix.os }}-${{ matrix.arch }}/
+          else
+            echo "ERROR: No files found in MFAAvalonia directory"
+            exit 1
+          fi
 
       # 上传安装后的文件作为制品，供后续步骤（如发布）使用
       # - name: Upload Artifacts
