@@ -73,69 +73,118 @@ jobs:
       tag: ${{ steps.set_tag.outputs.tag }}
       is_release: ${{ steps.set_tag.outputs.is_release }}
 
-  # 安装任务：构建并打包安装文件
-  install:
-    needs: meta  # 依赖 meta 任务的输出
-    runs-on: macos-latest  # 使用 macOS 系统运行
+   # 安装 MaaFramework 任务（下载 + 安装）
+  install-MaaFramework:
+    needs: meta # 依赖 meta 任务的输出（如版本标签），需等待 meta 完成后再执行
+    runs-on: ${{ matrix.os == 'win' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
     strategy:
-      # 多平台多架构矩阵
       matrix:
-        # 修正系统和架构的映射关系，匹配实际文件名格式
-        # os: [win, osx, linux]  # 目标操作系统
-        # arch: [arm64, x64]     # 目标架构
-        os: [win, macos, linux]
-        arch: [x86_64, aarch64]  # 直接使用 x86_64 而非 x64
-      fail-fast: false  # 一个矩阵失败不影响其他矩阵执行
-
+        os: [win, linux, macos]
+        arch: [x86_64, aarch64]
+      fail-fast: false
     steps:
-      - name: Checkout Code  # 拉取代码（包括子模块）
+      - name: Checkout Code
+        uses: actions/checkout@v4 # 检出当前仓库代码
+        with:
+          submodules: true # 同时检出仓库的子模块（若有依赖子模块）
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Clean Install Directory
+        run: rm -rf install && mkdir -p install/MaaFramework/${{ matrix.os }}-${{ matrix.arch }}
+        shell: bash
+
+      # 下载 MFAAvalonia 最新发布包（排除 android 平台，因矩阵中无 android）
+      - name: Download MAA
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: MaaXYZ/MaaFramework
+          fileName: "MAA-${{ matrix.os }}-${{ matrix.arch }}*"
+          latest: true
+          out-file-path: 'deps' # 下载文件的输出目录
+          extract: true # 自动解压下载的压缩包
+
+      - name: Install MaaFramework
+        shell: bash
+        run: |
+          python ./install.py ${{ needs.meta.outputs.tag }}
+
+      # - name: Upload Artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: MaHR-${{ matrix.os }}-${{ matrix.arch }}
+      #     path: 'install'
+
+
+  # 安装 MFAAvalonia 任务（下载 + 安装）
+  install-MFAAvalonia:
+    needs: meta
+    runs-on: ${{ matrix.os == 'win' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    strategy:
+      matrix:
+        os: [win, linux, osx]
+        arch: [x64, arm64]
+      fail-fast: false
+    steps:
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           submodules: true
 
-      - name: Download MaaFramework
-        uses: robinraju/release-downloader@v1
-        with:
-            repository: MaaXYZ/MaaFramework
-            fileName: 'MAA-${{ matrix.os }}-${{ matrix.arch }}*'
-            # MAA-osx-arm64* #  MAA-macos-aarch64
-            # MAA-win-x64* #  MAA-win-x86_64-v4.4.0.zip
-            latest: true
-            out-file-path: 'deps'
-            extract: true
-
-      - name: Install  # 执行安装脚本（）
+      - name: Clean Install Directory
+        run: rm -rf install && mkdir -p install/MFAAvalonia/${{ matrix.os }}-${{ matrix.arch }}
         shell: bash
-        run: |
-          python ./install.py ${{ needs.meta.outputs.tag }}  # 传入标签参数
 
-      - name: Download MFA  # 下载 MFAAvalonia 最新发布（排除 Android 平台）
+      - name: Download MFA
+        # 矩阵中 os 为 win/linux/osx，此条件始终成立，可保留作为兼容扩展
         if: ${{ matrix.os != 'android' }}
         uses: robinraju/release-downloader@v1
         with:
-          repository: SweetSmellFox/MFAAvalonia  # 仓库地址
-          fileName: "MFAAvalonia-*-${{ matrix.os }}-${{ matrix.arch }}*"  # 匹配文件名
-          latest: true  # 下载最新发布
-          out-file-path: "MFAAvalonia"  # 输出目录
-          extract: true  # 解压文件
+          repository: SweetSmellFox/MFAAvalonia
+          fileName: "MFAAvalonia-*-${{ matrix.os }}-${{ matrix.arch }}*"
+          latest: true
+          out-file-path: 'MFAAvalonia'
+          extract: true
 
-      - name: Install MFAAvalonia  # 安装 MFAAvalonia 到目标目录
+      - name: Install MFAAvalonia
         if: ${{ matrix.os != 'android' }}
         shell: bash
         run: |
-          rm -rf MFAAvalonia/resource/base/model  # 删除原有模型目录
-          cp -r MFAAvalonia/* install  # 复制文件到 install 目录
+          rm -rf MFAAvalonia/resource/base/model
+          cp -r MFAAvalonia/* install
 
-      - name: Upload Artifacts  # 上传构建产物
+      # 上传安装后的文件作为制品，供后续步骤（如发布）使用
+      # - name: Upload Artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: MaHR-${{ matrix.os }}-${{ matrix.arch }}
+      #     path: 'install' # 上传 install 目录下的所有内容（即安装好的 MFAAvalonia 文件）
+
+  # 统一上传构建产物
+  upload-artifacts:
+    needs: [install-MaaFramework, install-MFAAvalonia]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: install
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MaaXXX-${{ matrix.os }}-${{ matrix.arch }}  # 产物名称（含平台和架构）
-          path: "install"  # 上传 install 目录
+          name: MaHR-${{ matrix.os }}-${{ matrix.arch }}  # 使用项目名称 MaHR
+          path: install/
 
   # 发布任务：仅在正式发布时执行
   release:
-    if: ${{ needs.meta.outputs.is_release == 'true' }}  # 仅当 is_release 为 true 时执行
-    needs: install  # 依赖 install 任务完成
+    # 仅当 is_release 为 true 时执行
+    if: ${{ needs.meta.outputs.is_release == 'true' }}
+    needs: [meta, upload-artifacts] # 依赖任务完成
     runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
     steps:
       - name: Download Artifacts  # 下载所有构建产物
@@ -147,7 +196,7 @@ jobs:
         run: |
           cd assets
           for f in *; do
-            (cd $f && zip -r ../$f-${{ needs.meta.outputs.tag }}.zip .)  # 按平台架构压缩
+            (cd $f && zip -r ../$f-${{ needs.meta.outputs.tag }}.zip .)
           done
 
       - name: Create Release  # 创建 GitHub Release 并上传产物
