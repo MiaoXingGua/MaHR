@@ -30,7 +30,7 @@ on:
 
 # 定义工作流任务
 jobs:
-  # 元数据处理任务：确定版本标签和发布状态
+  # 元数据处理：获得 标签（tag）和发布状态（is_release）
   meta:
     runs-on: ubuntu-latest  # 使用 Ubuntu 系统运行
     steps:
@@ -75,7 +75,8 @@ jobs:
 
    # 安装 MaaFramework 任务（下载 + 安装）
   install-MaaFramework:
-    needs: meta # 依赖 meta 任务的输出（如版本标签），需等待 meta 完成后再执行
+    needs: meta # 依赖 meta 任务的输出：标签（tag）和 发布状态（is_release）
+    # 设置运行环境
     runs-on: ${{ matrix.os == 'win' && 'windows-latest' || matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
     strategy:
       matrix:
@@ -83,19 +84,21 @@ jobs:
         arch: [x86_64, aarch64]
       fail-fast: false
     steps:
+      # 检出代码
       - name: Checkout Code
         uses: actions/checkout@v4 # 检出当前仓库代码
         with:
           submodules: true # 同时检出仓库的子模块（若有依赖子模块）
-
+      # 设置 Python 环境
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Clean Install Directory
-        run: rm -rf install && mkdir -p install/MaaFramework/${{ matrix.os }}-${{ matrix.arch }}
-        shell: bash
+      # 清理安装目录
+      # - name: Clean Install Directory
+      #   run: rm -rf install && mkdir -p install/MaaFramework/${{ matrix.os }}-${{ matrix.arch }}
+      #   shell: bash
 
       # 下载 MFAAvalonia 最新发布包（排除 android 平台，因矩阵中无 android）
       - name: Download MAA
@@ -107,10 +110,14 @@ jobs:
           out-file-path: 'deps' # 下载文件的输出目录
           extract: true # 自动解压下载的压缩包
 
+      # 安装 MaaFramework
+      # 安装路径 install/MaaFramework/${os}-${arch}
       - name: Install MaaFramework
         shell: bash
         run: |
           python ./install.py ${{ needs.meta.outputs.tag }}
+
+
 
       # - name: Upload Artifacts
       #   uses: actions/upload-artifact@v4
